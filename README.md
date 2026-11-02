@@ -123,3 +123,48 @@ Tableaux complets : `02_ekf_angles_2d/results/results.md`.
 ## Pistes
 
 Optimiser le placement des capteurs, comparer l'EKF à un filtre sans parfum (UKF), vérifier la cohérence statistique du filtre (NEES/NIS), ajouter des fausses alarmes et un seuil de validation des mesures, passer en 3D, puis brancher des mesures acoustiques réelles.
+
+## Limites de validité de l'EKF : étude de cohérence (NEES)
+
+### 1. Question posée
+L'EKF de ce dépôt reste-t-il **cohérent**, c'est-à-dire l'incertitude qu'il annonce (matrice de covariance P) reflète-t-elle l'erreur qu'il commet réellement ? Si ce n'est pas le cas, dans quelles conditions ?
+
+### 2. Méthode
+- Placement B des capteurs, trajectoire du drone avec un virage brutal à t = 20 s, 100 simulations Monte Carlo (graines 0 à 99).
+- Critère : NEES = eᵀ · P⁻¹ · e, où e est l'erreur de position (x, y) et P le bloc 2×2 de position de la covariance. Pour un filtre cohérent, la NEES moyenne vaut 2 (nombre de composantes de l'erreur). Sur 100 tirages, l'intervalle de confiance à 95 % de la moyenne est d'environ [1,6 ; 2,4].
+- Deux réglages du bruit de processus : `var_a = 1` (m/s²)² et `var_a = 0,01` (m/s²)².
+- Scripts : `02_ekf_angles_2d/etude_limite_ekf.py`.
+
+### 3. Prédictions écrites avant les résultats
+
+| Prédiction | Résultat | Verdict |
+|---|---|---|
+| Placement B : bosse d'erreur à t = 20 s | Deux bosses : t ≈ 17-18 s (alignement des visées) et t ≈ 22-23 s (virage) | Partiellement juste |
+| L'erreur du placement B sera plus basse que celle du placement A | Pics de 6 à 8 m contre environ 3 m (capteurs plus éloignés) | Fausse |
+| L'erreur réelle dépasse l'incertitude annoncée | Seulement après le virage ; avant, le filtre est trop prudent | Partiellement juste |
+| NEES sous 2 entre 15 et 19 s | NEES d'environ 1,2 à 1,5 | Juste |
+| Avec `var_a = 0,01`, NEES plus proche de 2 avant le virage | NEES ≈ 2 de 0 à 19,5 s | Juste |
+| Avec `var_a = 0,01`, pic plus haut après le virage | Pic d'environ 153 contre 6,5 | Juste |
+
+### 4. Résultats
+
+**`var_a = 1`**
+![erreur vs incertitude](02_ekf_angles_2d/results/etude_sigma_vs_rmse_B_va1.0.png)
+![NEES](02_ekf_angles_2d/results/etude_nees_B_va1.0.png)
+
+Avant le virage, la NEES moyenne reste sous 2 (environ 1,2 à 1,6 entre 7 et 19 s) : le filtre est trop prudent. Après le virage, elle monte à environ 6,5 vers t = 22,5 s : le filtre est trop confiant.
+
+**`var_a = 0,01`**
+![erreur vs incertitude](02_ekf_angles_2d/results/etude_sigma_vs_rmse_B_va0.01.png)
+![NEES](02_ekf_angles_2d/results/etude_nees_B_va0.01.png)
+
+Avant le virage, la NEES colle à 2 : le filtre est cohérent. Après le virage, elle atteint environ 153 vers t = 28,5 s et reste à environ 18 à t = 40 s.
+
+### 5. Interprétation
+Le filtre suppose une vitesse constante et traite l'écart à ce modèle comme une accélération aléatoire de variance `var_a`. Avec `var_a = 1`, il surestime l'agitation du drone sur la ligne droite, d'où une covariance P trop grande et une NEES sous 2. Avec `var_a = 0,01`, il est cohérent sur la ligne droite, mais le virage, que le modèle ne prévoit pas, fait diverger l'estimation de la vitesse. La covariance P est calculée à partir du modèle (F, Q, R) et de la géométrie des capteurs, pas de l'erreur effectivement commise : elle ne grossit donc pas au virage. Le gain de Kalman K = P·Hᵀ·S⁻¹ est proportionnel à P : un P petit donne un K petit, donc les mesures d'angle, pourtant correctes, ne corrigent qu'une faible fraction de l'écart, ce qui explique le pic tardif et la lente décroissance de la NEES. Aucune valeur unique de `var_a` ne rend ce filtre cohérent sur toute la trajectoire : c'est un compromis, qui motive les modèles à régimes multiples (IMM).
+
+### 6. Limites
+- Critère de décrochage retenu : la NEES. La comparaison de l'erreur à celle d'une triangulation directe sans filtre n'a pas été faite.
+- L'hypothèse initiale, un décrochage de la linéarisation de la mesure d'angle à courte distance, **n'est pas testée** : la trajectoire ne passe jamais à moins d'environ 7 m d'un capteur.
+- Une seule trajectoire, un seul virage, simulation uniquement (pas de données réelles).
+- Le décalage entre le virage (t = 20 s) et le pic de NEES (t ≈ 28,5 s) est expliqué par la dérive de l'erreur et par le gain K, sans mesure dédiée qui isole ce mécanisme.
