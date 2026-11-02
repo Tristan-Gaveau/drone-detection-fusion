@@ -8,6 +8,9 @@ from ekf import run_ekf
 from simulate import generer_trajectoire, simuler_mesures
 import experiments as ex
 
+import sys
+VAR_A = float(sys.argv[1]) if len(sys.argv) > 1 else 1.0
+
 NOM = "B"                      # placement étudié : "A" ou "B"
 temps, x, y = generer_trajectoire(ex.DT, ex.DUREE)
 cfg = ex.CONFIGS[NOM]
@@ -19,7 +22,7 @@ nees = np.zeros((ex.N_RUNS, n_t))
 
 for s in range(ex.N_RUNS):
     m = simuler_mesures(temps, x, y, cfg, seed=s)
-    X, P = run_ekf(m, cfg, ex.VAR_A, ex.DT)
+    X, P = run_ekf(m, cfg, VAR_A, ex.DT)
     for i in range(n_t):
         e = np.array([X[i, 0] - x[i], X[i, 1] - y[i]])
         P_pos = P[i, 0:2, 0:2]
@@ -39,7 +42,7 @@ ax.set_xlabel("Temps (s)"); ax.set_ylabel("Position (m)")
 ax.set_title(f"Placement {NOM} : erreur réelle vs incertitude annoncée")
 ax.grid(True); ax.legend()
 fig.tight_layout()
-fig.savefig(ex.SORTIE / f"etude_sigma_vs_rmse_{NOM}.png", dpi=130)
+fig.savefig(ex.SORTIE / f"etude_sigma_vs_rmse_{NOM}_va{VAR_A}.png", dpi=130)
 plt.close(fig)
 
 # Figure 2 : NEES moyenne (référence = 2 pour un filtre cohérent)
@@ -50,7 +53,7 @@ ax.set_xlabel("Temps (s)"); ax.set_ylabel("NEES")
 ax.set_title(f"Placement {NOM} : cohérence du filtre (NEES)")
 ax.grid(True); ax.legend()
 fig.tight_layout()
-fig.savefig(ex.SORTIE / f"etude_nees_{NOM}.png", dpi=130)
+fig.savefig(ex.SORTIE / f"etude_nees_{NOM}_va{VAR_A}.png", dpi=130)
 plt.close(fig)
 
 i22 = int(22 / ex.DT)
